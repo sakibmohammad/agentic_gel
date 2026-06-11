@@ -9,12 +9,12 @@ import json
 import pandas as pd
 import sys
 import os
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 from abc import ABC, abstractmethod
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from agents.local_llm_agent import LocalLLMAgent
+from agents.local_llm_agent import LocalLLMAgent # Have to change this import for alternate LLMs
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] - %(message)s')
@@ -85,55 +85,58 @@ class RuleBasedToolDecider(ToolDecider):
                           available_models: List[str]) -> Dict[str, Any]:
         """Rule-based model family selection."""
         n_samples = data_summary.get('n_samples', 0)
-        n_features = data_summary.get('n_features', 0)
+        n_features = data_summary.get('n_features', 0) # Maybe erase if not needed
+        n_targets = data_summary.get('n_targets', 1) # Maybe erase if not needed
         
         if task_type == "classification":
-            if n_samples < 1000:
-                model = "LogisticRegression"
-            elif n_features > 50:
-                model = "RandomForestClassifier"
-            else:
-                model = "RandomForestClassifier"
+           model = "MLPClassifier"
         elif task_type == "regression":
-            if n_features > 50:
-                model = "Ridge"
+            model = "MLPRegressor"
+        elif task_type == "generation":
+            if n_samples < 2000:
+                model = "CVAEModel"
             else:
-                model = "LinearRegression"
-        elif task_type == "anomaly_detection":
-            model = "IsolationForest"
+                model = "DiffusionModel"    
         else:
-            model = "RandomForestClassifier"
+            model = "MLPClassifier"  # Default to classification model
             
         return {
             "model": model,
-            "reason": f"Rule-based selection for {task_type}: {n_samples} samples, {n_features} features"
+            "reason": f"Rule-based selection for {task_type}"
         }
     
     def decide_hyperparameters(self, model: str, task_type: str, 
                              data_summary: Dict[str, Any]) -> Dict[str, Any]:
         """Rule-based hyperparameter selection."""
+        # Needs massive edits, have code the MLPs, and the diffusion model
         n_samples = data_summary.get('n_samples', 1000)
+        n_targets = data_summary.get('n_targets', 1)
         
-        if model == "RandomForestClassifier":
+        if task_type == "classification":
             return {
-                "n_estimators": min(100, max(10, n_samples // 10)),
-                "max_depth": None,
-                "random_state": 42,
-                "reason": f"Adaptive n_estimators based on {n_samples} samples"
+                # "n_estimators": min(100, max(10, n_samples // 10)),
+                # "max_depth": None,
+                # "random_state": 42,
+                # "reason": f"Adaptive n_estimators based on {n_samples} samples"
             }
-        elif model == "IsolationForest":
+        elif task_type == "Regression":
             return {
-                "contamination": "auto",
-                "n_estimators": 200,
-                "random_state": 42,
-                "reason": "Standard settings for anomaly detection"
+                # "n_estimators": min(100, max(10, n_samples // 10)),
+                # "max_depth": None,
+                # "random_state": 42,
+                # "final_layer_neurons": n_targets,
+                # "reason": f"Adaptive n_estimators based on {n_targets} targets"
             }
-        elif model == "LogisticRegression":
-            return {
-                "max_iter": 1000,
-                "random_state": 42,
-                "reason": "Standard settings for logistic regression"
-            }
+ 
+        elif task_type == "generation":
+            if n_samples < 2000:
+                return {
+
+                }
+            else:
+                return {
+                  
+                }
         else:
             return {
                 "random_state": 42,
@@ -186,7 +189,7 @@ class LLMToolDecider(ToolDecider):
         """Use LLM to decide preprocessing strategy."""
         prompt = """You are a data preprocessing expert. Based on the dataset characteristics, decide on the best preprocessing strategy.
 
-Available tools: imputation, scaling, encoding, normalization, feature_selection, outlier_detection
+Available tools: imputation, scaling, encoding, normalization, feature_selection
 
 Respond with JSON: {"strategy": "strategy_name", "tools": ["tool1", "tool2"], "reason": "explanation"}"""
         
@@ -209,7 +212,7 @@ Respond with JSON: {"strategy": "strategy_name", "tools": ["tool1", "tool2"], "r
 
 Available models: {', '.join(available_models)}
 
-Consider: sample size, feature count, data quality, computational efficiency.
+Consider: sample size, target count, feature count.
 
 Respond with JSON: {{"model": "model_name", "reason": "explanation"}}"""
         
@@ -231,14 +234,16 @@ Respond with JSON: {{"model": "model_name", "reason": "explanation"}}"""
         """Use LLM to decide hyperparameters."""
         prompt = f"""You are a hyperparameter tuning expert. For {model} on a {task_type} task, suggest appropriate hyperparameters.
 
-Consider: sample size, feature count, model complexity, computational constraints.
+Consider: sample size, feature count, target count, computational constraints.
 
 Respond with JSON: {{"param1": value1, "param2": value2, "reason": "explanation"}}
 
 Common parameters:
+
 - RandomForest: n_estimators, max_depth, min_samples_split
 - IsolationForest: contamination, n_estimators
 - LogisticRegression: max_iter, C, penalty"""
+#Need to edit the above prompt to include the MLPs and the diffusion model, and the CVAE model, and their common parameters.
         
         context = {
             "model": model,
@@ -293,6 +298,8 @@ def create_data_summary(df: pd.DataFrame) -> Dict[str, Any]:
         "categorical_columns": int(len(categorical_cols)),
         "missing_percentage": float(df.isnull().mean().mean() * 100),
         "has_missing_values": bool(df.isnull().any().any()),
+        "duplicate_percentage": float(df.duplicated().mean() * 100),
+        "has_duplicates": bool(df.duplicated().any()),
         "memory_usage_mb": float(df.memory_usage(deep=True).sum() / 1024 / 1024),
         "dtypes": df.dtypes.apply(lambda x: str(x.name)).to_dict(),
         "numeric_cols": [str(col) for col in numeric_cols],
@@ -320,26 +327,26 @@ if __name__ == "__main__":
     rule_decider = RuleBasedToolDecider()
     
     preprocessing = rule_decider.decide_preprocessing_strategy(
-        summary, ["imputation", "scaling", "encoding"]
+        summary, ["feature_selection", "normalization", "encoding"]
     )
     print("Preprocessing decision:", json.dumps(preprocessing, indent=2))
     
     model = rule_decider.decide_model_family(
-        "classification", summary, ["RandomForestClassifier", "LogisticRegression"]
+        "classification", summary, "MLPClassifier"
     )
     print("Model decision:", json.dumps(model, indent=2))
     
     hyperparams = rule_decider.decide_hyperparameters(
-        "RandomForestClassifier", "classification", summary
+        "MLPClassifier", "classification", summary
     )
     print("Hyperparameters:", json.dumps(hyperparams, indent=2))
     
     # Test LLM decider (with mock LLM)
-    print("\n=== Testing LLM Decider (with mock) ===")
+    print("\n=== Testing LLM Decider (with mock) ===") # Need to edit when I use new open-source LLMs, and change the import at the top of this file
     mock_llm = LocalLLMAgent(backend='mock')
     llm_decider = LLMToolDecider(llm_agent=mock_llm)
     
     preprocessing = llm_decider.decide_preprocessing_strategy(
-        summary, ["imputation", "scaling", "encoding"]
+        summary, ["feature_selection", "normalization", "encoding"]
     )
     print("LLM Preprocessing decision:", json.dumps(preprocessing, indent=2))
