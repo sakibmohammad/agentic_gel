@@ -1,7 +1,6 @@
 """
-Data Loader Agent for Smart Manufacturing Maintenance Dataset
------------------------------------------------------------
-This agent is responsible for loading and inspecting the dataset, providing detailed reporting for educational and scientific purposes.
+DataLoader Agent
+
 """
 
 
@@ -16,16 +15,16 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] - 
 
 class DataLoaderAgent:
     """
-    DataLoaderAgent loads and inspects a CSV dataset for smart manufacturing applications.
-    It uses the logging module for all output, suitable for scientific and educational use.
+    DataLoaderAgent loads and inspects a CSV dataset file for additive manufacturing of hydrogels.
+    It uses the logging module for all output, suitable for scientific uses.
     """
     def __init__(self, dataset_path: str):
         """
         Initialize the DataLoaderAgent.
         Args:
-            dataset_path (str): Path to the dataset CSV file.
+            dataset_path (str): Path to the CSV file.
         """
-        logging.info("Initializing Data Loader Agent...")
+        logging.info("Initializing DataLoader Agent...")
         self.dataset_path = dataset_path
         self.data: Optional[pd.DataFrame] = None
         logging.info(f"Dataset path set to: {self.dataset_path}")
@@ -48,9 +47,9 @@ class DataLoaderAgent:
             self.data = None
         return self.data
 
-    def inspect_data(self, verbose: bool = True) -> Optional[Dict[str, Any]]:
+    def eda_data(self, verbose: bool = True) -> Optional[Dict[str, Any]]:
         """
-        Inspects the loaded dataset and logs a detailed report.
+        Inspects the loaded dataset and logs a detailed exploratory data analysis report.
         Args:
             verbose (bool): If True, logs the report. If False, only returns the results.
         Returns:
@@ -64,22 +63,26 @@ class DataLoaderAgent:
             "num_rows": self.data.shape[0],
             "num_columns": self.data.shape[1],
             "columns": self.data.columns.tolist(),
+            "unique_counts": self.data.nunique().to_dict(),
             "dtypes": self.data.dtypes.apply(lambda x: x.name).to_dict(),
             "head": self.data.head().to_string(),
             "missing_values": self.data.isnull().sum().to_dict(),
+            "num_duplicates": int(self.data.duplicated().sum()),
             "describe": self.data.describe().to_string(),
         }
 
         if verbose:
-            logging.info("--- Dataset Inspection Report ---")
+            logging.info("--- Exploratory Data Analysis Report ---")
             logging.info(f"Number of rows: {report['num_rows']}")
             logging.info(f"Number of columns: {report['num_columns']}")
             logging.info(f"Column names: {report['columns']}")
+            logging.info(f"Number of unique values per column: {report['unique_counts']}")
             logging.info(f"Data types: {report['dtypes']}")
             logging.info(f"First 5 rows:\n{report['head']}")
             logging.info(f"Missing values per column: {report['missing_values']}")
+            logging.info(f"Number of duplicate rows: {report['num_duplicates']}")
             logging.info(f"Basic statistics (numerical columns):\n{report['describe']}")
-            logging.info("--- End of Inspection Report ---")
+            logging.info("--- End of Exploratory Data Analysis Report ---")
             
         return report
 
@@ -87,12 +90,12 @@ class DataLoaderAgent:
 # For direct script usage, allow dataset path to be provided as a command-line argument for flexibility.
 if __name__ == "__main__":
     import sys
-    logging.info("This script can be run directly to load and inspect a dataset.")
+    logging.info("This script can be run directly to load and perform exploratory data analysis on a dataset.")
     logging.info("Usage: python data_loader_agent.py <path_to_dataset.csv>")
     
     if len(sys.argv) < 2:
         logging.error("No dataset path provided. Please provide the path as a command-line argument.")
-        logging.info("Example: python data_loader_agent.py '../data/Smart Manufacturing Maintenance Dataset/smart_maintenance_dataset.csv'")
+        logging.info("Example: python data_loader_agent.py '../data/PAA Hydrogel Dataset/paa_hydrogel_dataset.csv'")
         sys.exit(1)
         
     dataset_path = sys.argv[1]
@@ -100,6 +103,6 @@ if __name__ == "__main__":
     
     agent = DataLoaderAgent(dataset_path)
     if agent.load_data() is not None:
-        agent.inspect_data()
+        agent.eda_data()
     else:
         logging.error("Standalone script execution failed because data could not be loaded.")
